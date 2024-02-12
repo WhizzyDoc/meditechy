@@ -296,10 +296,11 @@ class AdminViewSet(viewsets.ReadOnlyModelViewSet):
         l_name = request.POST.get('lname')
         image = request.FILES.get('image')
         try:
-            admin = Author.objects.get(api_token=key)
+            admin = Admin.objects.get(api_token=key)
             if admin is not None:
                 # edited attributes
                 admin.email = email
+                admin.user.email = email
                 admin.first_name = f_name
                 admin.last_name = l_name
                 admin.save()
@@ -409,66 +410,64 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
                 'status': "error",
                 "message": "Invalid API token"
             })
+  
 
- 
-    
-"""
-class ProjectViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Project.objects.all()
-    serializer_class = ProjectSerializer
+class BlogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Blog.objects.all()
+    serializer_class = BlogSerializer
     permission_classes = [AllowAny]
     @action(detail=False,
             methods=['get'])
-    def get_projects(self, request, *args, **kwargs):
+    def get_blogs(self, request, *args, **kwargs):
         page = self.request.query_params.get('page')
         per_page = self.request.query_params.get('per_page')
         query = self.request.query_params.get('search')
         cat_id = self.request.query_params.get('category_id')
         order = self.request.query_params.get('sort_by')
-        key = self.request.query_params.get('api_token')
         try:
-            admin = Author.objects.get(api_token=key)
             if page is None:
                 page = 1
             else:
                 page = int(page)
             if per_page is None:
-                per_page = 20
+                per_page = 10
             else:
                 per_page = int(per_page)
             if query is None:
                 query = ""
-            if order is  None:
+            if order is None:
                 order = 'title'
             start = (page - 1) * per_page
             stop = page * per_page
             total_items = 0
-            projects = None
+            blogs = None
             if cat_id is None:
-                total_items = Project.objects.filter(author=admin).filter(
+                total_items = Blog.objects.filter(
                             Q(title__icontains=query) | Q(description__icontains=query) |
-                            Q(live_url__icontains=query) | Q(github_url__icontains=query) |
-                            Q(database__title__icontains=query)).count()
-                projects = Project.objects.filter(author=admin).filter(
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).count()
+                blogs = Blog.objects.filter(
                             Q(title__icontains=query) | Q(description__icontains=query) |
-                            Q(live_url__icontains=query) | Q(github_url__icontains=query) |
-                            Q(database__title__icontains=query)).order_by(order)[start:stop]
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).order_by(order)[start:stop]
             else:
-                cat = ProjectCategory.objects.get(id=int(cat_id))
-                total_items = Project.objects.filter(author=admin, category=cat).filter(
+                cat = BlogCategory.objects.get(id=int(cat_id))
+                total_items = Blog.objects.filter(category=cat).filter(
                             Q(title__icontains=query) | Q(description__icontains=query) |
-                            Q(live_url__icontains=query) | Q(github_url__icontains=query) |
-                            Q(database__title__icontains=query)).count()
-                projects = Project.objects.filter(author=admin, category=cat).filter(
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).count()
+                blogs = Blog.objects.filter(category=cat).filter(
                             Q(title__icontains=query) | Q(description__icontains=query) |
-                            Q(live_url__icontains=query) | Q(github_url__icontains=query) |
-                            Q(database__title__icontains=query)).order_by(order)[start:stop]
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).order_by(order)[start:stop]
             total_pages = math.ceil(total_items/per_page)
-            if projects.exists():
+            if blogs.exists():
+                for b in blogs:
+                    b.comments = b.blog_comments.count()
                 return Response({
                     'status': 'success',
-                    'data': [ProjectSerializer(pos).data for pos in projects],
-                    'message': 'project list retrieved',
+                    'data': [BlogSerializer(pos).data for pos in blogs],
+                    'message': 'blog list retrieved',
                     'page_number': page,
                     "list_per_page": per_page,
                     "total_pages": total_pages,
@@ -478,7 +477,7 @@ class ProjectViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 return Response({
                     'status': 'success',
-                    'message': 'No project found',
+                    'message': 'No blog found',
                     'page_number': page,
                     "list_per_page": per_page,
                     "total_pages": total_pages,
@@ -489,111 +488,176 @@ class ProjectViewSet(viewsets.ReadOnlyModelViewSet):
             print(e)
             return Response({
                 'status': 'error',
-                'message': 'Error getting project list'
+                'message': 'Error getting blog list'
             })
     
     @action(detail=False,
             methods=['get'])
-    def get_resume_projects(self, request, *args, **kwargs):
-        key = self.request.query_params.get('api_token')
+    def get_published_blogs(self, request, *args, **kwargs):
+        page = self.request.query_params.get('page')
+        per_page = self.request.query_params.get('per_page')
+        query = self.request.query_params.get('search')
+        cat_id = self.request.query_params.get('category_id')
+        order = self.request.query_params.get('sort_by')
         try:
-            admin = Author.objects.get(api_token=key)
-            projects = Project.objects.filter(author=admin, resume_project=True)
-            if projects.exists():
+            if page is None:
+                page = 1
+            else:
+                page = int(page)
+            if per_page is None:
+                per_page = 10
+            else:
+                per_page = int(per_page)
+            if query is None:
+                query = ""
+            if order is None:
+                order = 'title'
+            start = (page - 1) * per_page
+            stop = page * per_page
+            total_items = 0
+            blogs = None
+            if cat_id is None:
+                total_items = Blog.objects.filter(status='Published').filter(
+                            Q(title__icontains=query) | Q(description__icontains=query) |
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).count()
+                blogs = Blog.objects.filter(status='Published').filter(
+                            Q(title__icontains=query) | Q(description__icontains=query) |
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).order_by(order)[start:stop]
+            else:
+                cat = BlogCategory.objects.get(id=int(cat_id))
+                total_items = Blog.objects.filter(status='Published', category=cat).filter(
+                            Q(title__icontains=query) | Q(description__icontains=query) |
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).count()
+                blogs = Blog.objects.filter(status='Published', category=cat).filter(
+                            Q(title__icontains=query) | Q(description__icontains=query) |
+                            Q(post__icontains=query) | Q(author__icontains=query) |
+                            Q(keywords__icontains=query)).order_by(order)[start:stop]
+            total_pages = math.ceil(total_items/per_page)
+            if blogs.exists():
                 return Response({
                     'status': 'success',
-                    'data': [ProjectSerializer(pos).data for pos in projects],
-                    'message': 'project list retrieved'
+                    'data': [BlogSerializer(pos).data for pos in blogs],
+                    'message': 'blog list retrieved',
+                    'page_number': page,
+                    "list_per_page": per_page,
+                    "total_pages": total_pages,
+                    "total_items": total_items,
+                    "search_query": query
                 })
             else:
                 return Response({
                     'status': 'success',
-                    'message': 'No project found'
+                    'message': 'No blog found',
+                    'page_number': page,
+                    "list_per_page": per_page,
+                    "total_pages": total_pages,
+                    "total_items": total_items,
+                    "search_query": query
                 })
         except Exception as e:
             print(e)
             return Response({
                 'status': 'error',
-                'message': 'Error getting project list'
+                'message': 'Error getting blog list'
             })
-
     
     @action(detail=False,
             methods=['get'])
-    def get_project(self, request, *args, **kwargs):
-        id = self.request.query_params.get('project_id')
-        key = self.request.query_params.get('api_token')
-        type = self.request.query_params.get('type')
-        if id and key:
-            try:
-                admin = Author.objects.get(api_token=key)
-                project = Project.objects.get(id=int(id), author=admin)
-                if project is not None:
-                    if type is None or type == "client":
-                        project.views += 1
-                        project.save()
-                    elif type == "admin":
-                        pass
-                    return Response({
-                        'status': 'success',
-                        'data': ProjectSerializer(project).data,
-                        'message': 'project details retrieved'
-                    })
-                else:
-                    return Response({
-                        'status': 'success',
-                        'message': 'Invalid project ID'
-                    })
-            except:
+    def get_blog_categories(self, request, *args, **kwargs):
+        try:
+            cats = BlogCategory.objects.all()
+            if cats.exists():
                 return Response({
-                    'status': 'error',
-                    'message': 'Invalid project ID or API Token'
+                    'status': 'success',
+                    'data': [BlogCategorySerializer(pos).data for pos in cats],
+                    'message': 'category list retrieved'
                 })
-        else:
+            else:
+                return Response({
+                    'status': 'success',
+                    'message': 'No category found'
+                })
+        except Exception as e:
+            print(e)
             return Response({
-                'status': 'success',
-                'message': 'Invalid project ID or API Token'
+                'status': 'error',
+                'message': 'Error getting category list'
             })
-
+    
+    @action(detail=False,
+            methods=['get'])
+    def get_blog_tags(self, request, *args, **kwargs):
+        try:
+            tags = Tag.objects.all()
+            if tags.exists():
+                return Response({
+                    'status': 'success',
+                    'data': [TagSerializer(pos).data for pos in tags],
+                    'message': 'tag list retrieved'
+                })
+            else:
+                return Response({
+                    'status': 'success',
+                    'message': 'No tag found'
+                })
+        except Exception as e:
+            print(e)
+            return Response({
+                'status': 'error',
+                'message': 'Error getting tag list'
+            })
+    
     @action(detail=False,
             methods=['post'])
-    def create_project(self, request, *args, **kwargs):
+    def add_blog(self, request, *args, **kwargs):
         key = request.POST.get('api_token')
         title = request.POST.get('title')
-        db_id = request.POST.get('database_id')
+        slug = slugify(title)
+        author = request.POST.get('author')
         cat_id = request.POST.get('category_id')
-        url = request.POST.get('url')
-        github = request.POST.get('github')
-        des = request.POST.get('description')
-        frames_ids = request.POST.getlist('frame_ids', [])
+        keywords = request.POST.get('keywords')
+        status = request.POST.get('status')
+        post = request.POST.get('post')
+        allow = request.POST.get('allow')
+        tags_ids = request.POST.getlist('tag_ids', [])
         image = None
-        if request.FILES:
+        thumb = None
+        if request.FILES.get('image'):
             image = request.FILES.get('image')
+        if request.FILES.get('thumbnail'):
+            thumb = request.FILES.get('thumbnail')
         try:
-            admin = Author.objects.get(api_token=key)
+            admin = Admin.objects.get(api_token=key)
             if admin is not None:
                 # check if position does not exist
                 try:
-                    project = Project.objects.get(title=title, author=admin)
+                    Blog.objects.get(slug=slug)
                     return Response({
                         'status': "error",
-                        "message": "project with the same title already exists!"
+                        "message": "blog with the same title already exists!"
                     })
                 except:
-                    category = ProjectCategory.objects.get(id=int(cat_id))
-                    database = Database.objects.get(id=int(db_id))
-                    new_pro = Project(author=admin, title=title, live_url=url, github_url=github,
-                                      description=des, image=image, category=category, database=database)
-                    new_pro.save()
-                    f_ids = [int(f_id) for f_id in frames_ids]
-                    frames = Framework.objects.filter(id__in=f_ids)
-                    for f in frames:
-                        new_pro.frameworks.add(f)
-                        new_pro.save()
+                    category = BlogCategory.objects.get(id=int(cat_id))
+                    if allow == 'true':
+                        allow = True
+                    elif allow == 'false':
+                        allow = False
+                    new_blog = Blog(author=author, title=title, slug=slug, category=category,
+                                    keywords=keywords, status=status, post=post, allow_comments=allow,
+                                    image=image, thumbnail=thumb)
+                    new_blog.save()
+                    t_ids = [int(t_id) for t_id in tags_ids]
+                    tags = Tag.objects.filter(id__in=t_ids)
+                    for t in tags:
+                        new_blog.tags.add(t)
+                        new_blog.save()
                     return Response({
                         'status': "success",
-                        "message": "project created sucessfully",
-                        "data": ProjectSerializer(new_pro).data,
+                        "message": "blog created sucessfully",
+                        "data": BlogSerializer(new_blog).data,
                     })
             else:
                 return Response({
@@ -608,52 +672,92 @@ class ProjectViewSet(viewsets.ReadOnlyModelViewSet):
             })
 
     @action(detail=False,
+            methods=['get'])
+    def get_blog(self, request, *args, **kwargs):
+        id = self.request.query_params.get('blog_id')
+        if id:
+            try:
+                blog = Blog.objects.get(id=int(id))
+                if blog is not None:
+                    return Response({
+                        'status': 'success',
+                        'data': BlogSerializer(blog).data,
+                        'message': 'blog details retrieved'
+                    })
+                else:
+                    return Response({
+                        'status': 'success',
+                        'message': 'Invalid blog ID'
+                    })
+            except:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid blog ID'
+                })
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid blog ID'
+            })
+
+    @action(detail=False,
             methods=['post'])
-    def edit_project(self, request, *args, **kwargs):
+    def edit_blog(self, request, *args, **kwargs):
+        id = request.POST.get('blog_id')
         key = request.POST.get('api_token')
-        id = request.POST.get('project_id')
         title = request.POST.get('title')
-        db_id = request.POST.get('database_id')
+        slug = slugify(title)
+        author = request.POST.get('author')
         cat_id = request.POST.get('category_id')
-        url = request.POST.get('url')
-        github = request.POST.get('github')
-        des = request.POST.get('description')
-        frames_ids = request.POST.getlist('frame_ids', [])
+        keywords = request.POST.get('keywords')
+        status = request.POST.get('status')
+        post = request.POST.get('post')
+        allow = request.POST.get('allow')
+        tags_ids = request.POST.getlist('tag_ids', [])
+        image = request.FILES.get('image')
+        thumb = request.FILES.get('thumbnail')
         try:
-            admin = Author.objects.get(api_token=key)
+            admin = Admin.objects.get(api_token=key)
             if admin is not None:
                 try:
-                    project = Project.objects.get(id=int(id), author=admin)
-                    category = ProjectCategory.objects.get(id=int(cat_id))
-                    database = Database.objects.get(id=int(db_id))
-                    project.title = title
-                    project.category = category
-                    project.database = database
-                    project.live_url = url
-                    project.github_url = github
-                    project.description = des
-                    project.save()
-                    if request.FILES:
-                        project.image = request.FILES.get('image')
-                        project.save()
-                    f_ids = [int(f_id) for f_id in frames_ids]
-                    frames = Framework.objects.filter(id__in=f_ids)
-                    for f in project.frameworks.all():
-                        project.frameworks.remove(f)
-                        project.save()
-                    for f in frames:
-                        project.frameworks.add(f)
-                        project.save()
+                    blog = Blog.objects.get(id=int(id))
+                    category = BlogCategory.objects.get(id=int(cat_id))
+                    blog.title = title
+                    blog.slug = slug
+                    blog.author = author
+                    blog.category = category
+                    blog.keywords = keywords
+                    blog.status = status
+                    blog.post = post
+                    if allow == 'true':
+                        blog.allow_comments = True
+                    elif allow == 'false':
+                        blog.allow_comments = False
+                    blog.save()
+                    if image is not None:
+                        blog.image = image
+                        blog.save()
+                    if thumb is not None:
+                        blog.thumbnail = thumb
+                        blog.save()
+                    t_ids = [int(t_id) for t_id in tags_ids]
+                    tags = Tag.objects.filter(id__in=t_ids)
+                    for t in blog.tags.all():
+                        blog.tags.remove(t)
+                        blog.save()
+                    for t in tags:
+                        blog.tags.add(t)
+                        blog.save()
                     return Response({
                         'status': "success",
-                        "message": "project edited sucessfully",
-                        "data": ProjectSerializer(project).data,
+                        "message": "blog edited sucessfully",
+                        "data": BlogSerializer(blog).data,
                     })
                 except Exception as e:
                     print(e)
                     return Response({
                         "status": "error",
-                        "message": f"project with id \'{id}\' does not exist"
+                        "message": f"blog with id \'{id}\' does not exist"
                     })
             else:
                 return Response({
@@ -668,23 +772,23 @@ class ProjectViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False,
             methods=['post'])
-    def delete_project(self, request, *args, **kwargs):
+    def delete_blog(self, request, *args, **kwargs):
         key = request.POST.get('api_token')
-        id = request.POST.get('project_id')
+        id = request.POST.get('blog_id')
         try:
-            admin = Author.objects.get(api_token=key)
+            admin = Admin.objects.get(api_token=key)
             if admin is not None:
                 try:
-                    project = Project.objects.get(id=int(id), author=admin)
-                    project.delete()
+                    blog = Blog.objects.get(id=int(id))
+                    blog.delete()
                     return Response({
                         'status': "success",
-                        "message": f"project \'{project.title}\' deleted sucessfully",
+                        "message": f"blog \'{blog.title}\' deleted sucessfully",
                     })
                 except:
                     return Response({
                         "status": "error",
-                        "message": f"project with id \'{id}\' does not exist"
+                        "message": f"blog with id \'{id}\' does not exist"
                     })
             else:
                 return Response({
@@ -696,23 +800,17 @@ class ProjectViewSet(viewsets.ReadOnlyModelViewSet):
                 'status': "error",
                 "message": "Invalid API token"
             })
-
-class CommentViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Comment.objects.all()
-    serializer_class = CommentSerializer
-    permission_classes = [AllowAny]
+    
     @action(detail=False,
             methods=['get'])
     def get_comments(self, request, *args, **kwargs):
         page = self.request.query_params.get('page')
         per_page = self.request.query_params.get('per_page')
         query = self.request.query_params.get('search')
-        pro_id = self.request.query_params.get('project_id')
+        pro_id = self.request.query_params.get('blog_id')
         order = self.request.query_params.get('sort_by')
-        key = self.request.query_params.get('api_token')
         try:
-            admin = Author.objects.get(api_token=key)
-            project = Project.objects.get(id=int(pro_id), author=admin)
+            blog = Blog.objects.get(id=int(pro_id))
             if page is None:
                 page = 1
             else:
@@ -723,22 +821,20 @@ class CommentViewSet(viewsets.ReadOnlyModelViewSet):
                 per_page = int(per_page)
             if query is None:
                 query = ""
-            if order is  None:
+            if order is None:
                 order = '-date'
             start = (page - 1) * per_page
             stop = page * per_page
             total_items = 0
-            total_items = Comment.objects.filter(project=project).filter(
-                            Q(name__icontains=query) | Q(email__icontains=query) |
+            total_items = Comment.objects.filter(blog=blog).filter(Q(name__icontains=query) |
                             Q(comment__icontains=query) | Q(reply__icontains=query)).count()
-            comments = Comment.objects.filter(project=project).filter(
-                            Q(name__icontains=query) | Q(email__icontains=query) |
+            comments = Comment.objects.filter(blog=blog).filter(Q(name__icontains=query) |
                             Q(comment__icontains=query) | Q(reply__icontains=query)).order_by(order)[start:stop]
             total_pages = math.ceil(total_items/per_page)
             if comments.exists():
                 return Response({
                     'status': 'success',
-                    'project': ProjectSerializer(project).data,
+                    'blog': BlogSerializer(blog).data,
                     'data': [CommentSerializer(pos).data for pos in comments],
                     'message': 'comment list retrieved',
                     'page_number': page,
@@ -751,7 +847,7 @@ class CommentViewSet(viewsets.ReadOnlyModelViewSet):
                 return Response({
                     'status': 'success',
                     'message': 'No comments found',
-                    'project': ProjectSerializer(project).data,
+                    'blog': BlogSerializer(blog).data,
                     'page_number': page,
                     "list_per_page": per_page,
                     "total_pages": total_pages,
@@ -764,6 +860,109 @@ class CommentViewSet(viewsets.ReadOnlyModelViewSet):
                 'status': 'error',
                 'message': 'Error getting comment list'
             })
+   
+    @action(detail=False,
+            methods=['get'])
+    def get_comment(self, request, *args, **kwargs):
+        id = self.request.query_params.get('comment_id')
+        if id:
+            try:
+                com = Comment.objects.get(id=int(id))
+                if com is not None:
+                    return Response({
+                        'status': 'success',
+                        'data': CommentSerializer(com).data,
+                        'message': 'comment retrieved'
+                    })
+                else:
+                    return Response({
+                        'status': 'success',
+                        'message': 'Invalid comment ID'
+                    })
+            except:
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid comment ID'
+                })
+        else:
+            return Response({
+                'status': 'error',
+                'message': 'Invalid comment ID'
+            })
+
+    @action(detail=False,
+            methods=['post'])
+    def delete_comment(self, request, *args, **kwargs):
+        key = request.POST.get('api_token')
+        id = request.POST.get('comment_id')
+        try:
+            admin = Admin.objects.get(api_token=key)
+            if admin is not None:
+                try:
+                    com = Comment.objects.get(id=int(id))
+                    com.delete()
+                    return Response({
+                        'status': "success",
+                        'data': BlogSerializer(com.blog).data,
+                        "message": f"comment deleted sucessfully",
+                    })
+                except:
+                    return Response({
+                        "status": "error",
+                        "message": f"comment with id \'{id}\' does not exist"
+                    })
+            else:
+                return Response({
+                    'status': "error",
+                    "message": "User is not found"
+                })
+        except:
+            return Response({
+                'status': "error",
+                "message": "Invalid API token"
+            })
+    
+    @action(detail=False,
+            methods=['post'])
+    def reply_comment(self, request, *args, **kwargs):
+        key = request.POST.get('api_token')
+        id = request.POST.get('comment_id')
+        reply = request.POST.get('reply')
+        try:
+            admin = Admin.objects.get(api_token=key)
+            if admin is not None:
+                try:
+                    comment = Comment.objects.get(id=int(id))
+                    comment.reply = reply
+                    comment.save()
+                    return Response({
+                        'status': "success",
+                        'data': BlogSerializer(comment.blog).data,
+                        "message": "comment replied sucessfully"
+                    })
+                except Exception as e:
+                    print(e)
+                    return Response({
+                        "status": "error",
+                        "message": f"comment with id \'{id}\' does not exist"
+                    })
+            else:
+                return Response({
+                    'status': "error",
+                    "message": "User not found"
+                })
+        except:
+            return Response({
+                'status': "error",
+                "message": "Invalid API token"
+            })
+
+"""
+class CommentViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+    permission_classes = [AllowAny]
+    
 
     @action(detail=False,
             methods=['post'])
@@ -808,39 +1007,7 @@ class CommentViewSet(viewsets.ReadOnlyModelViewSet):
                 "message": "Invalid API token"
             })
 
-    @action(detail=False,
-            methods=['post'])
-    def reply_comment(self, request, *args, **kwargs):
-        key = request.POST.get('api_token')
-        id = request.POST.get('comment_id')
-        reply = request.POST.get('reply')
-        try:
-            admin = Author.objects.get(api_token=key)
-            if admin is not None:
-                try:
-                    comment = Comment.objects.get(id=int(id), project__author=admin)
-                    comment.reply = reply
-                    comment.save()
-                    return Response({
-                        'status': "success",
-                        "message": "comment replied sucessfully"
-                    })
-                except Exception as e:
-                    print(e)
-                    return Response({
-                        "status": "error",
-                        "message": f"comment with id \'{id}\' does not exist"
-                    })
-            else:
-                return Response({
-                    'status': "error",
-                    "message": "User not found"
-                })
-        except:
-            return Response({
-                'status': "error",
-                "message": "Invalid API token"
-            })
+    
 
     @action(detail=False,
             methods=['post'])

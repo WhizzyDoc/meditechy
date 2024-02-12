@@ -35,7 +35,7 @@ class BlogSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
     class Meta:
         model = Blog
-        fields = ['id', 'title', 'category', 'post', 'image', 'thumbnail',
+        fields = ['id', 'title', 'author', 'category', 'post', 'image', 'thumbnail',
                   'allow_comments', 'tags', 'status', 'keywords', 'description',
                   'created', 'comments']
 
